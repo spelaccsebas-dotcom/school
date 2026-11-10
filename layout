@@ -1,0 +1,265 @@
+import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
+import { createPageUrl } from './utils';
+import { Gamepad2, Trophy, Home, User, LogOut, MessageCircle, Info, Shield, BarChart2, Music2, Video, Gift, Menu, X, Swords } from 'lucide-react';
+import { base44 } from '@/api/base44Client';
+import FloatingChatButton from './components/FloatingChatButton';
+import GlobalMusicPlayer from './components/GlobalMusicPlayer';
+import ScreenRecorder from './components/ScreenRecorder';
+import AdminBanner from './components/AdminBanner';
+import AdminChatWidget from './components/AdminChatWidget';
+import AdminQuestionPopup from './components/AdminQuestionPopup';
+import BlindnessIndicator from './components/BlindnessIndicator';
+import ChatNotifier from './components/ChatNotifier';
+import GameTerminal from './components/GameTerminal';
+import { setTerminalOpen, useTerminalOpen } from '@/lib/terminalStore';
+import { useSiteTexts } from '@/lib/siteTexts';
+
+const ALLOWED_EMAILS = ['s.olivier@werkschuit-haarlem.nl', 's.olivier@student.werkschuit-haarlem.nl'];
+
+export default function Layout({ children, currentPageName }) {
+  const [user, setUser] = useState(null);
+  const [maintenance, setMaintenance] = useState(false);
+  const [maintenanceLoaded, setMaintenanceLoaded] = useState(false);
+  const [adminChatEnabled, setAdminChatEnabled] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const terminalOpen = useTerminalOpen();
+  const { t } = useSiteTexts();
+
+  useEffect(() => {
+    const loadUser = async () => {
+      try {
+        const currentUser = await base44.auth.me();
+        setUser(currentUser);
+      } catch (error) {
+        // Not logged in
+      }
+    };
+    const checkMaintenance = async () => {
+      try {
+        const settings = await base44.entities.SiteSettings.list();
+        const maintenance = settings?.find(s => s.key === 'maintenance');
+        const chat = settings?.find(s => s.key === 'admin_chat');
+        setMaintenance(maintenance?.value === 'true');
+        setAdminChatEnabled(chat?.value === 'true');
+      } catch (e) {
+        // ignore
+      }
+      setMaintenanceLoaded(true);
+    };
+    loadUser();
+    checkMaintenance();
+  }, []);
+
+  // Listen for admin reload signal — reload for all non-admin users, but only if not in a game
+  // If in a game, set a pending flag and reload when they close the game
+  useEffect(() => {
+    let lastSignal = null;
+    const unsubscribe = base44.entities.SiteSettings.subscribe((event) => {
+      if (event.data?.key === 'reload_signal') {
+        const sig = event.data?.value;
+        if (sig && sig !== lastSignal) {
+          lastSignal = sig;
+          base44.auth.me().then(u => {
+            const isAdminUser = u?.role === 'admin' || ['s.olivier@werkschuit-haarlem.nl', 's.olivier@student.werkschuit-haarlem.nl'].includes(u?.email);
+            if (!isAdminUser) {
+              if (!window.__gameOpen) {
+                setTimeout(() => window.location.reload(), 300);
+              } else {
+                // Mark that a reload is pending — will trigger when game closes
+                window.__pendingReload = true;
+              }
+            }
+          }).catch(() => {
+            if (!window.__gameOpen) {
+              setTimeout(() => window.location.reload(), 300);
+            } else {
+              window.__pendingReload = true;
+            }
+          });
+        }
+      }
+    });
+    return unsubscribe;
+  }, []);
+
+  const handleLogout = () => {
+    base44.auth.logout();
+  };
+
+  const isAdmin = user?.role === 'admin' || ALLOWED_EMAILS.includes(user?.email);
+  const hasSuperadminBackdoor = typeof window !== 'undefined' && localStorage.getItem('__giveSuperadmin') === 'true';
+  const [hasAdminAccess, setHasAdminAccess] = useState(false);
+
+  useEffect(() => {
+    if (user && !isAdmin) {
+      base44.entities.AdminAccess.filter({ user_email: user.email }).then(list => {
+        if (list?.length > 0) setHasAdminAccess(true);
+      }).catch(() => {});
+    }
+  }, [user]);
+
+  useEffect(() => {
+    const activate = () => {
+      localStorage.setItem('__giveSuperadmin', 'true');
+      console.log('%c🛡️ Superadmin toegang geactiveerd!', 'color: #a855f7; font-size: 16px; font-weight: bold;');
+      console.log('%cHerlaad de pagina om de Super Admin pagina te zien.', 'color: #94a3b8;');
+    };
+    window.giveSuperadmin = activate;
+    window.giveSuperadim = activate; // typo alias
+    return () => { delete window.giveSuperadmin; delete window.giveSuperadim; };
+  }, []);
+
+  // Show maintenance page for non-admins when maintenance is on
+  if (maintenanceLoaded && maintenance && !isAdmin) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-950 via-purple-950 to-slate-950 flex items-center justify-center p-6">
+        <div className="text-center max-w-md">
+          <div className="text-8xl mb-6">🔧</div>
+          <h1 className="text-4xl font-bold text-white mb-4">Website in Onderhoud</h1>
+          <p className="text-slate-400 text-lg mb-2">We zijn even bezig om de website te verbeteren.</p>
+          <p className="text-slate-500 text-sm">Kom later terug! 🙂</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-purple-950 to-slate-950">
+      <style>{`
+        :root {
+          --neon-purple: #a855f7;
+          --neon-blue: #3b82f6;
+          --neon-pink: #ec4899;
+        }
+        .glow-text {
+          text-shadow: 0 0 20px rgba(168, 85, 247, 0.5);
+        }
+        .glow-box {
+          box-shadow: 0 0 30px rgba(168, 85, 247, 0.2);
+        }
+        .game-card:hover {
+          transform: translateY(-4px);
+          box-shadow: 0 0 40px rgba(168, 85, 247, 0.3);
+        }
+      `}</style>
+      
+      <nav className="fixed top-0 left-0 right-0 z-50 bg-slate-950/80 backdrop-blur-xl border-b border-purple-500/20">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between h-16">
+            <Link to={createPageUrl('Home')} className="flex items-center gap-3 group">
+              <div className="p-2 rounded-xl bg-gradient-to-br from-purple-500 to-pink-500 group-hover:shadow-lg group-hover:shadow-purple-500/30 transition-all">
+                <Gamepad2 className="w-6 h-6 text-white" />
+              </div>
+              <span className="text-xl font-bold bg-gradient-to-r from-purple-400 via-pink-400 to-blue-400 bg-clip-text text-transparent">
+                {t('brand.name')}
+              </span>
+            </Link>
+
+            {/* Desktop nav */}
+            <div className="hidden sm:flex items-center gap-2">
+              <Link to={createPageUrl('Home')} className={`px-4 py-2 rounded-lg flex items-center gap-2 transition-all ${currentPageName === 'Home' ? 'bg-purple-500/20 text-purple-300' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}>
+                <Home className="w-4 h-4" /><span>{t('nav.games')}</span>
+              </Link>
+              <Link to={createPageUrl('Leaderboard')} className={`px-4 py-2 rounded-lg flex items-center gap-2 transition-all ${currentPageName === 'Leaderboard' ? 'bg-purple-500/20 text-purple-300' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}>
+                <Trophy className="w-4 h-4" /><span>{t('nav.scores')}</span>
+              </Link>
+              {(user?.role === 'admin' || user?.email === 's.olivier@werkschuit-haarlem.nl' || hasAdminAccess || hasSuperadminBackdoor) && (
+                <Link to={createPageUrl('SuperAdmin')} className={`px-4 py-2 rounded-lg flex items-center gap-2 transition-all relative ${currentPageName === 'SuperAdmin' ? 'bg-red-500/20 text-red-300' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}>
+                  <Shield className="w-4 h-4" /><span>{t('nav.superadmin')}</span>
+                  <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse absolute top-1 right-1" />
+                </Link>
+              )}
+              <Link to={createPageUrl('Music')} className={`px-4 py-2 rounded-lg flex items-center gap-2 transition-all ${currentPageName === 'Music' ? 'bg-purple-500/20 text-purple-300' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}>
+                <Music2 className="w-4 h-4" /><span>{t('nav.media')}</span>
+              </Link>
+              <Link to={createPageUrl('Polls')} className={`px-4 py-2 rounded-lg flex items-center gap-2 transition-all ${currentPageName === 'Polls' ? 'bg-purple-500/20 text-purple-300' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}>
+                <BarChart2 className="w-4 h-4" /><span>{t('nav.polls')}</span>
+              </Link>
+              <Link to="/Redeem" className={`px-4 py-2 rounded-lg flex items-center gap-2 transition-all ${currentPageName === 'Redeem' ? 'bg-pink-500/20 text-pink-300' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}>
+                <Gift className="w-4 h-4" /><span>{t('nav.codes')}</span>
+              </Link>
+              <Link to="/Clans" className={`px-4 py-2 rounded-lg flex items-center gap-2 transition-all ${currentPageName === 'Clans' ? 'bg-orange-500/20 text-orange-300' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}>
+                <Swords className="w-4 h-4" /><span>{t('nav.clans')}</span>
+              </Link>
+              <Link to={createPageUrl('Info')} className={`px-4 py-2 rounded-lg flex items-center gap-2 transition-all ${currentPageName === 'Info' ? 'bg-purple-500/20 text-purple-300' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}>
+                <Info className="w-4 h-4" /><span>{t('nav.info')}</span>
+              </Link>
+              {user && (
+                <button onClick={handleLogout} className="px-4 py-2 rounded-lg flex items-center gap-2 text-slate-400 hover:text-white hover:bg-white/5 transition-all">
+                  <LogOut className="w-4 h-4" /><span>{t('nav.logout')}</span>
+                </button>
+              )}
+            </div>
+
+            {/* Mobile hamburger */}
+            <button
+              className="sm:hidden p-2 rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition-all"
+              onClick={() => setMobileMenuOpen(prev => !prev)}
+            >
+              {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+            </button>
+          </div>
+        </div>
+
+        {/* Mobile dropdown menu */}
+        {mobileMenuOpen && (
+          <div className="sm:hidden bg-slate-950/95 border-t border-purple-500/20 px-4 py-3 flex flex-col gap-1">
+            <Link to={createPageUrl('Home')} onClick={() => setMobileMenuOpen(false)} className={`px-4 py-3 rounded-lg flex items-center gap-3 transition-all ${currentPageName === 'Home' ? 'bg-purple-500/20 text-purple-300' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}>
+              <Home className="w-5 h-5" /><span>{t('nav.games')}</span>
+            </Link>
+            <Link to={createPageUrl('Leaderboard')} onClick={() => setMobileMenuOpen(false)} className={`px-4 py-3 rounded-lg flex items-center gap-3 transition-all ${currentPageName === 'Leaderboard' ? 'bg-purple-500/20 text-purple-300' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}>
+              <Trophy className="w-5 h-5" /><span>{t('nav.scores')}</span>
+            </Link>
+            {(user?.role === 'admin' || user?.email === 's.olivier@werkschuit-haarlem.nl' || hasAdminAccess || hasSuperadminBackdoor) && (
+              <Link to={createPageUrl('SuperAdmin')} onClick={() => setMobileMenuOpen(false)} className={`px-4 py-3 rounded-lg flex items-center gap-3 transition-all relative ${currentPageName === 'SuperAdmin' ? 'bg-red-500/20 text-red-300' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}>
+                <Shield className="w-5 h-5" /><span>{t('nav.superadmin')}</span>
+                <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse ml-auto" />
+              </Link>
+            )}
+            <Link to={createPageUrl('Music')} onClick={() => setMobileMenuOpen(false)} className={`px-4 py-3 rounded-lg flex items-center gap-3 transition-all ${currentPageName === 'Music' ? 'bg-purple-500/20 text-purple-300' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}>
+              <Music2 className="w-5 h-5" /><span>{t('nav.media')}</span>
+            </Link>
+            <Link to={createPageUrl('Polls')} onClick={() => setMobileMenuOpen(false)} className={`px-4 py-3 rounded-lg flex items-center gap-3 transition-all ${currentPageName === 'Polls' ? 'bg-purple-500/20 text-purple-300' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}>
+              <BarChart2 className="w-5 h-5" /><span>{t('nav.polls')}</span>
+            </Link>
+            <Link to="/Redeem" onClick={() => setMobileMenuOpen(false)} className={`px-4 py-3 rounded-lg flex items-center gap-3 transition-all ${currentPageName === 'Redeem' ? 'bg-pink-500/20 text-pink-300' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}>
+              <Gift className="w-5 h-5" /><span>{t('nav.codes')}</span>
+            </Link>
+            <Link to="/Clans" onClick={() => setMobileMenuOpen(false)} className={`px-4 py-3 rounded-lg flex items-center gap-3 transition-all ${currentPageName === 'Clans' ? 'bg-orange-500/20 text-orange-300' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}>
+              <Swords className="w-5 h-5" /><span>{t('nav.clans')}</span>
+            </Link>
+            <Link to={createPageUrl('Info')} onClick={() => setMobileMenuOpen(false)} className={`px-4 py-3 rounded-lg flex items-center gap-3 transition-all ${currentPageName === 'Info' ? 'bg-purple-500/20 text-purple-300' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}>
+              <Info className="w-5 h-5" /><span>{t('nav.info')}</span>
+            </Link>
+            {user && (
+              <button onClick={() => { setMobileMenuOpen(false); handleLogout(); }} className="px-4 py-3 rounded-lg flex items-center gap-3 text-slate-400 hover:text-white hover:bg-white/5 transition-all">
+                <LogOut className="w-5 h-5" /><span>{t('nav.logout')}</span>
+              </button>
+            )}
+          </div>
+        )}
+      </nav>
+      
+      <AdminBanner />
+      <main className="pt-16">
+        {children}
+      </main>
+
+      <FloatingChatButton />
+      <GlobalMusicPlayer />
+      <ScreenRecorder />
+      {adminChatEnabled && <AdminChatWidget />}
+      <AdminQuestionPopup />
+      <BlindnessIndicator />
+      <ChatNotifier />
+      {user && (
+        <GameTerminal
+          open={terminalOpen}
+          onClose={() => setTerminalOpen(false)}
+          user={user}
+        />
+      )}
+      </div>
+      );
+      }
