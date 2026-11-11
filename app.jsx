@@ -1,4 +1,4 @@
-import { Toaster } from "@/components/ui/toaster"
+import { Toaster } from "@/components/ui/sonner"
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClientInstance } from '@/lib/query-client'
 import NavigationTracker from '@/lib/NavigationTracker'
@@ -11,6 +11,7 @@ import Videos from './pages/Videos';
 import Redeem from './pages/Redeem';
 import Clans from './pages/Clans';
 import UserNotRegisteredError from '@/components/UserNotRegisteredError';
+import { appParams } from '@/lib/app-params';
 
 const { Pages, Layout, mainPage } = pagesConfig;
 const mainPageKey = mainPage ?? Object.keys(Pages)[0];
@@ -73,6 +74,24 @@ const AuthenticatedApp = () => {
 
 
 function App() {
+  if (!appParams.appId || !appParams.appBaseUrl) {
+    return (
+      <main className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center p-6">
+        <section className="max-w-lg rounded-2xl border border-purple-500/30 bg-slate-900 p-8">
+          <h1 className="text-2xl font-bold mb-4">Backendconfiguratie ontbreekt</h1>
+          <p className="text-slate-300 mb-4">
+            GameZone kan nog niet verbinden met de oorspronkelijke Base44-app.
+            De app-ID of backend-URL ontbreekt in deze export.
+          </p>
+          <p className="text-slate-300">
+            Configureer <code className="text-purple-300">VITE_BASE44_APP_ID</code> en{' '}
+            <code className="text-purple-300">VITE_BASE44_APP_BASE_URL</code> met de gegevens
+            van de oorspronkelijke app om in te loggen en te spelen.
+          </p>
+        </section>
+      </main>
+    );
+  }
 
   return (
     <AuthProvider>
