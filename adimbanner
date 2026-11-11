@@ -1,0 +1,70 @@
+import React, { useState, useEffect } from 'react';
+import { base44 } from '@/api/base44Client';
+import { X } from 'lucide-react';
+import { AnimatePresence, motion } from 'framer-motion';
+
+export default function AdminBanner() {
+  const [messages, setMessages] = useState([]);
+  const [dismissed, setDismissed] = useState([]);
+
+  useEffect(() => {
+    const load = async () => {
+      const msgs = await base44.entities.AdminMessage.list('-created_date', 5);
+      setMessages(msgs.filter(m => m.active));
+    };
+    load();
+
+    const unsub = base44.entities.AdminMessage.subscribe((event) => {
+      if (event.type === 'create') {
+        setMessages(prev => [event.data, ...prev]);
+      } else if (event.type === 'delete') {
+        setMessages(prev => prev.filter(m => m.id !== event.id));
+      }
+    });
+    return unsub;
+  }, []);
+
+  const visible = messages.filter(m => !dismissed.includes(m.id));
+
+  const colorMap = {
+    info: 'from-blue-600 to-blue-700 border-blue-400/30',
+    warning: 'from-orange-600 to-orange-700 border-orange-400/30',
+    alert: 'from-red-600 to-red-700 border-red-400/30',
+  };
+
+  const iconMap = {
+    info: 'ℹ️',
+    warning: '⚠️',
+    alert: '🚨',
+  };
+
+  return (
+    <div className="fixed top-16 left-0 right-0 z-40 pointer-events-none">
+      <AnimatePresence>
+        {visible.map(msg => (
+          <motion.div
+            key={msg.id}
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className={`pointer-events-auto mx-auto max-w-3xl mt-2 px-4 py-3 rounded-xl border bg-gradient-to-r ${colorMap[msg.type] || colorMap.info} shadow-lg flex items-center justify-between gap-3`}
+          >
+            <div className="flex items-center gap-2">
+              <span className="text-lg">{iconMap[msg.type] || 'ℹ️'}</span>
+              <span className="text-white font-medium text-sm">
+                {msg.sender_name && <span className="font-bold">{msg.sender_name}: </span>}
+                {msg.message}
+              </span>
+            </div>
+            <button
+              onClick={() => setDismissed(prev => [...prev, msg.id])}
+              className="text-white/70 hover:text-white flex-shrink-0"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </motion.div>
+        ))}
+      </AnimatePresence>
+    </div>
+  );
+}
