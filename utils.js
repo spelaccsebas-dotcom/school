@@ -6,4 +6,8 @@ export function cn(...inputs) {
 } 
 
 
+export function createPageUrl(pageName) {
+  return `/${pageName.replace(/ /g, '-')}`;
+}
+
 export const isIframe = window.self !== window.top;
